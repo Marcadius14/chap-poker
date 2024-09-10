@@ -130,19 +130,19 @@ function createButtons(dayArray, userId)
 function addButtonVar(customID, label, style)
 {
     var button;
-    if(style == "Primary") {
+    if((style == "Primary") || (style == 1)) {
         button = new ButtonBuilder()
 			.setCustomId(customID)
 			.setLabel(label)
 			.setStyle(ButtonStyle.Primary);
     }
-    if(style == "Secondary") {
+    if((style == "Secondary") || (style == 2)) {
         button = new ButtonBuilder()
 			.setCustomId(customID)
 			.setLabel(label)
 			.setStyle(ButtonStyle.Secondary);
     }
-    if(style == "Success") {
+    if((style == "Success") || (style == 3)) {
         button = new ButtonBuilder()
 			.setCustomId(customID)
 			.setLabel(label)
