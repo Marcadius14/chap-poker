@@ -1,5 +1,6 @@
 const { Events, Collection, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../database');
+const {addButtonVar} = require('../commands/utility/availablity');
 
 module.exports = {
 	name: Events.InteractionCreate,
@@ -87,7 +88,7 @@ module.exports = {
 
                             const wipeBeforeSave = await db.query(`DELETE FROM public.availability_messages WHERE user_id = '${interaction.user.id}';`);
 
-                            const availMessage = await member.send({content: `${capitalizeFirstLetter(interaction.user.username)} would like to host a poker night on one of the following nights. Click all nights you are available, and they will be highlighted green. If your availability changes, click the button again to grey it out:`, components: origActionRows, filter: isCreatorFilter }).catch(error => console.error(`Could not send message to ${member.user.tag}.`));
+                            const availMessage = await member.send({content: `${capitalizeFirstLetter(interaction.user.username)} would like to host a poker night on one of the following nights. Click all nights you are available, and they will be highlighted green. If your availability changes, click the button again to grey it out. If a date has at least one person attending, you'll see the total number of people next to it:`, components: origActionRows, filter: isCreatorFilter }).catch(error => console.error(`Could not send message to ${member.user.tag}.`));
 
                             const saveMessage = await db.query(`INSERT INTO public.availability_messages (unique_id, message_id, user_id, rec_user_id) VALUES('${uniqueId}', '${availMessage.id}', '${interaction.user.id}','${member.id}');`);
                         }
@@ -120,7 +121,13 @@ module.exports = {
                                     else {
                                         newStyle = 3;
                                         //insert
-                                        const addResp = db.query(`INSERT INTO public.availability_status (button_id, user_id, unique_id, buttonLabel) VALUES('${button.customId}', '${interaction.user.id}', '${uniqueId}', '${button.label}');`);
+                                        const labelSubStrIndex = button.label.indexOf(':');
+                                        let noCountLabel = button.label;
+                                        if(labelSubStrIndex != -1) {
+                                            noCountLabel = button.label.substring(0, labelSubStrIndex);
+                                           //console.log("noCountLabel is : " + noCountLabel);
+                                        }
+                                        const addResp = db.query(`INSERT INTO public.availability_status (button_id, user_id, unique_id, buttonLabel) VALUES('${button.customId}', '${interaction.user.id}', '${uniqueId}', '${noCountLabel}');`);
                                     }
                                 }
                                 
@@ -135,6 +142,51 @@ module.exports = {
                         })
 
                         await interaction.update({content: interaction.content, components: updatedRows, filter: isCreatorFilter });
+
+                        //Update all buttons with new totals
+
+                        const getMessagesToUpdate = await db.query(`SELECT message_id, rec_user_id FROM public.availability_messages WHERE unique_id = '${uniqueId}';`);
+
+                        const getLabelCount = await db.query(`select buttonlabel, count(*) as labelCount FROM public.availability_status WHERE unique_id = '${uniqueId}' group by buttonlabel;`);
+
+                        getMessagesToUpdate.rows.forEach(async message => {
+                            const msgId = message.message_id;
+                            const msgRecUsr = message.rec_user_id;
+                            const userRec = await interaction.client.users.fetch(msgRecUsr);
+                            const dmChannel = await userRec.createDM();
+                            const msg = await dmChannel.messages.fetch(msgId);
+
+                            const updatedRows = msg.components.map(row => {
+                                const newRow = new ActionRowBuilder();
+
+                                row.components.forEach(async button => {
+                                    let origStyle = button.style;
+                                    const labelSubStrIndex = button.label.indexOf(':');
+                                    let noCountLabel = button.label;
+                                    let labelIndex = -1;
+                                    if(labelSubStrIndex != -1) {
+                                        noCountLabel = button.label.substring(0, labelSubStrIndex);
+                                    }
+                                    
+                                    labelIndex = getLabelCount.rows.findIndex(lab => lab.buttonlabel === noCountLabel);
+
+                                    if(labelIndex !== -1) {
+                                        const newButton = addButtonVar(button.customId, noCountLabel + ": " + getLabelCount.rows[labelIndex].labelcount, origStyle);
+                                        newRow.addComponents(newButton);
+                                    }
+                                    else {
+                                        const newButton = addButtonVar(button.customId, noCountLabel, origStyle);
+                                        newRow.addComponents(newButton);
+                                    }
+                                    
+                                    //console.log("buttonID: " + button.customId + " buttonLabel: " + button.label);
+                                });
+                                return newRow;
+                            });
+
+                            await msg.edit({content: msg.content, components: updatedRows});
+                            //await msg.edit({content: 'This availability form has been closed.', components: []});
+                        });
                     }
                 }
             }
